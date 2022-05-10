@@ -5,10 +5,15 @@
 *.pyc
 *.err
 *.script
+*.sh
+
+TODO.md
 
 data/*
+logs/*
 =======
 data/PIE
 data/JAAD
 data/HEVI_dataset
 data/ETHUCY
+tools/pie/checkpoints/*
