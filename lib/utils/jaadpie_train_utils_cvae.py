@@ -10,48 +10,74 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils import data
 
-from lib.utils.eval_utils import eval_jaad_pie, eval_jaad_pie_cvae
-from lib.losses import cvae, cvae_multi
+from lib.utils.eval_utils import eval_jaad_pie_cvae
+from lib.losses import cvae_multi
 
-def train(model, train_gen, criterion, optimizer, device):
+def train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, writer=None):
+    # pid = os.getpid()
+    # prev_mem = 0
     model.train() # Sets the module in training mode.
     total_goal_loss = 0
     total_cvae_loss = 0
     total_KLD_loss = 0
     loader = tqdm(train_gen, total=len(train_gen))
+    # loader = train_gen
+    loader.set_description("Epoch {}/{}".format(epoch, num_epochs))
     with torch.set_grad_enabled(True):
-        for batch_idx, data in enumerate(loader):
+        for i, data in enumerate(loader):
             batch_size = data['input_x'].shape[0]
             input_traj = data['input_x'].to(device)
             target_traj = data['target_y'].to(device)
 
             all_goal_traj, cvae_dec_traj, KLD_loss, _  = model(inputs=input_traj, map_mask=None, targets=target_traj)
+
             cvae_loss = cvae_multi(cvae_dec_traj,target_traj)
             goal_loss = criterion(all_goal_traj, target_traj)
 
-            train_loss = goal_loss + cvae_loss + KLD_loss.mean()
-
             total_goal_loss += goal_loss.item()* batch_size
             total_cvae_loss += cvae_loss.item()* batch_size
-            total_KLD_loss += KLD_loss.mean()* batch_size
+            total_KLD_loss += KLD_loss.mean().item()* batch_size
+
+            train_loss = goal_loss + cvae_loss + KLD_loss.mean()
 
             # optimize
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
-        
+            
+            # cur_mem = (int(open('/proc/%s/statm'%pid, 'r').read().split()[1])+0.0)/256
+            # add_mem = cur_mem - prev_mem
+            # prev_mem = cur_mem
+            # loader.set_postfix(mem=add_mem)
+            # print("added mem: {} M".format(add_mem))
+            loader.set_postfix(loss=train_loss.item())
+            if writer is not None:
+                global_step = epoch*len(train_gen)+i
+                writer.add_scalar('train/loss/goal_loss', goal_loss.item(), global_step)
+                writer.add_scalar('train/loss/cvae_loss', cvae_loss.item(), global_step)
+                writer.add_scalar('train/loss/kld_loss', KLD_loss.mean().item(), global_step)
+                writer.add_scalar('train/loss/total_loss', train_loss.item(), global_step)
+
     total_goal_loss /= len(train_gen.dataset)
     total_cvae_loss/=len(train_gen.dataset)
     total_KLD_loss/=len(train_gen.dataset)
     
     return total_goal_loss, total_cvae_loss, total_KLD_loss
 
-def val(model, val_gen, criterion, device):
+def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, return_metrics=False):
     total_goal_loss = 0
     total_cvae_loss = 0
     total_KLD_loss = 0
+    MSE_15 = 0
+    MSE_05 = 0 
+    MSE_10 = 0 
+    FMSE = 0 
+    FIOU = 0
+    CMSE = 0 
+    CFMSE = 0
     model.eval()
     loader = tqdm(val_gen, total=len(val_gen))
+    loader.set_description("Epoch {}/{}".format(epoch, num_epochs))
     with torch.set_grad_enabled(False):
         for batch_idx, data in enumerate(loader):
             batch_size = data['input_x'].shape[0]
@@ -69,11 +95,50 @@ def val(model, val_gen, criterion, device):
             total_cvae_loss += cvae_loss.item()* batch_size
             total_KLD_loss += KLD_loss.mean()* batch_size
 
+            input_traj_np = input_traj.to('cpu').numpy()
+            target_traj_np = target_traj.to('cpu').numpy()
+            cvae_dec_traj = cvae_dec_traj.to('cpu').numpy()
+            batch_MSE_15, batch_MSE_05, batch_MSE_10, batch_FMSE, batch_CMSE, batch_CFMSE, batch_FIOU = eval_jaad_pie_cvae(input_traj_np, target_traj_np[:,-1,:,:], cvae_dec_traj[:,-1,:,:,:])
+            MSE_15 += batch_MSE_15
+            MSE_05 += batch_MSE_05
+            MSE_10 += batch_MSE_10
+            FMSE += batch_FMSE
+            CMSE += batch_CMSE
+            CFMSE += batch_CFMSE
+            FIOU += batch_FIOU
+
+            val_loss = goal_loss.item() + cvae_loss.item() + KLD_loss.mean().item()
+            loader.set_postfix(loss=val_loss)
+
+            if writer is not None:
+                global_step = epoch*len(val_gen)+batch_idx
+                writer.add_scalar('val/loss/goal_loss', goal_loss.item(), global_step)
+                writer.add_scalar('val/loss/cvae_loss', cvae_loss.item(), global_step)
+                writer.add_scalar('val/loss/kld_loss', KLD_loss.mean().item(), global_step)
+                writer.add_scalar('val/loss/total_loss', val_loss, global_step)
+                writer.add_scalar('val/metric/MSE_05', batch_MSE_05, global_step)
+                writer.add_scalar('val/metric/MSE_10', batch_MSE_10, global_step)
+                writer.add_scalar('val/metric/MSE_15', batch_MSE_15, global_step)
+                writer.add_scalar('val/metric/FMSE', batch_FMSE, global_step)
+                writer.add_scalar('val/metric/CMSE', batch_CMSE, global_step)
+                writer.add_scalar('val/metric/CFMSE', batch_CFMSE, global_step)
+                writer.add_scalar('val/metric/FIOU', batch_FIOU, global_step)
+
     val_loss = total_goal_loss/len(val_gen.dataset)\
          + total_cvae_loss/len(val_gen.dataset) + total_KLD_loss/len(val_gen.dataset)
+
+    if return_metrics:
+        MSE_15 /= len(val_gen.dataset)
+        MSE_05 /= len(val_gen.dataset)
+        MSE_10 /= len(val_gen.dataset)
+        FMSE /= len(val_gen.dataset)
+        FIOU /= len(val_gen.dataset)
+        CMSE /= len(val_gen.dataset)
+        CFMSE /= len(val_gen.dataset)
+        return val_loss, MSE_15, MSE_05, MSE_10, FMSE, FIOU, CMSE, CFMSE
     return val_loss
 
-def test(model, test_gen, criterion, device):
+def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None):
     total_goal_loss = 0
     total_cvae_loss = 0
     total_KLD_loss = 0
@@ -86,6 +151,7 @@ def test(model, test_gen, criterion, device):
     CFMSE = 0
     model.eval()
     loader = tqdm(test_gen, total=len(test_gen))
+    loader.set_description("Epoch {}/{}".format(epoch, num_epochs))
     with torch.set_grad_enabled(False):
         for batch_idx, data in enumerate(loader):
             batch_size = data['input_x'].shape[0]
@@ -106,8 +172,7 @@ def test(model, test_gen, criterion, device):
             input_traj_np = input_traj.to('cpu').numpy()
             target_traj_np = target_traj.to('cpu').numpy()
             cvae_dec_traj = cvae_dec_traj.to('cpu').numpy()
-            batch_MSE_15, batch_MSE_05, batch_MSE_10, batch_FMSE, batch_CMSE, batch_CFMSE, batch_FIOU =\
-                eval_jaad_pie_cvae(input_traj_np, target_traj_np[:,-1,:,:], cvae_dec_traj[:,-1,:,:,:])
+            batch_MSE_15, batch_MSE_05, batch_MSE_10, batch_FMSE, batch_CMSE, batch_CFMSE, batch_FIOU = eval_jaad_pie_cvae(input_traj_np, target_traj_np[:,-1,:,:], cvae_dec_traj[:,-1,:,:,:])
             MSE_15 += batch_MSE_15
             MSE_05 += batch_MSE_05
             MSE_10 += batch_MSE_10
@@ -115,8 +180,22 @@ def test(model, test_gen, criterion, device):
             CMSE += batch_CMSE
             CFMSE += batch_CFMSE
             FIOU += batch_FIOU
-            
 
+            loader.set_postfix(cmse=batch_CMSE)
+            if writer is not None:
+                global_step = epoch*len(test_gen)+batch_idx
+                writer.add_scalar('test/loss/goal_loss', goal_loss.item(), global_step)
+                writer.add_scalar('test/loss/cvae_loss', cvae_loss.item(), global_step)
+                writer.add_scalar('test/loss/kld_loss', KLD_loss.mean().item(), global_step)
+                test_loss = goal_loss.item()+cvae_loss.item()+KLD_loss.mean().item()
+                writer.add_scalar('test/loss/total_loss', test_loss, global_step)
+                writer.add_scalar('test/metric/MSE_05', batch_MSE_05, global_step)
+                writer.add_scalar('test/metric/MSE_10', batch_MSE_10, global_step)
+                writer.add_scalar('test/metric/MSE_15', batch_MSE_15, global_step)
+                writer.add_scalar('test/metric/FMSE', batch_FMSE, global_step)
+                writer.add_scalar('test/metric/CMSE', batch_CMSE, global_step)
+                writer.add_scalar('test/metric/CFMSE', batch_CFMSE, global_step)
+                writer.add_scalar('test/metric/FIOU', batch_FIOU, global_step)
     
     MSE_15 /= len(test_gen.dataset)
     MSE_05 /= len(test_gen.dataset)
@@ -131,7 +210,6 @@ def test(model, test_gen, criterion, device):
     test_loss = total_goal_loss/len(test_gen.dataset) \
          + total_cvae_loss/len(test_gen.dataset) + total_KLD_loss/len(test_gen.dataset)
     return test_loss, MSE_15, MSE_05, MSE_10, FMSE, FIOU, CMSE, CFMSE
-
 
 def weights_init(m):
     if isinstance(m, nn.Linear):

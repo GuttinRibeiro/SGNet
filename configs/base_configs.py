@@ -15,3 +15,4 @@ def parse_base_args():
     parser.add_argument('--phases', default=['train', 'test'], type=list)
     parser.add_argument('--shuffle', default=True, type=bool)
     return parser
+
