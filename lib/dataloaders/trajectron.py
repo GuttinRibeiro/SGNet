@@ -24,7 +24,7 @@ class NodeTypeDataset(data.Dataset):
         # print(self.edge_types)
 
     def index_env(self, node_freq_mult, scene_freq_mult, **kwargs):
-        index = list()
+        index = []
         for scene in self.env.scenes:
             present_node_dict = scene.present_nodes(np.arange(0, scene.timesteps), type=self.node_type, **kwargs)
             for t, nodes in present_node_dict.items():
