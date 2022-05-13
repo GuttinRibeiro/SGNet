@@ -215,7 +215,7 @@ class PIE(object):
             path_to_file = join(self._annotation_path, set_id, vid + '_annt.xml')
             tree = ET.parse(path_to_file)
             num_frames = int(tree.find("./meta/task/size").text)
-            frames.extend([i for i in range(num_frames)])
+            frames.extend(list(range(num_frames)))
             frames.insert(0, num_frames)
         return frame_ids
 
@@ -226,7 +226,7 @@ class PIE(object):
                              Note: extracting 'all' frames requires approx. 3TB space whereas
                                    'annotated' requires approx. 1TB
         """
-        set_folders = [f for f in sorted(listdir(self._clips_path))]
+        set_folders = list(sorted(listdir(self._clips_path)))
         for set_id in set_folders:
             print('Extracting frames from', set_id)
             set_folder_path = join(self._clips_path, set_id)
@@ -549,7 +549,7 @@ class PIE(object):
             return database
 
         # Path to the folder annotations
-        set_ids = [f for f in sorted(listdir(self._annotation_path))]
+        set_ids = list(sorted(listdir(self._annotation_path)))
 
         # Read the content of set folders
         database = {}
