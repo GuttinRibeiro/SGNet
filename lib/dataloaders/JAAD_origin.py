@@ -84,7 +84,8 @@ class JAAD(object):
             makedirs(cache_path)
         return cache_path
 
-    def _get_default_path(self):
+    @staticmethod
+    def _get_default_path():
         """
         Return the default path where jaad_raw files are expected to be placed.
         :return: the default path to the dataset folder
@@ -123,7 +124,8 @@ class JAAD(object):
                     '{:05d}.png'.format(fid))
 
     # Visual helpers
-    def update_progress(self, progress):
+    @staticmethod
+    def update_progress(progress):
         """
          Creates a progress bar
          :param progress: The progress thus far
@@ -138,7 +140,8 @@ class JAAD(object):
         sys.stdout.write(text)
         sys.stdout.flush()
 
-    def _print_dict(self, dic):
+    @staticmethod
+    def _print_dict(dic):
         """
          Prints a dictionary, one key-value pair per line
          :param dic: Dictionary
@@ -147,7 +150,8 @@ class JAAD(object):
             print('%s: %s' % (str(k), str(v)))
 
     # Image processing helpers
-    def _squarify(self, bbox, ratio, img_width):
+    @staticmethod
+    def _squarify(bbox, ratio, img_width):
         """
         Changes is the ratio of bounding boxes to a fixed ratio
         :param bbox: Bounding box
@@ -210,7 +214,8 @@ class JAAD(object):
             print('\n')
 
     # Annotation processing helpers
-    def _map_text_to_scalar(self, label_type, value):
+    @staticmethod
+    def _map_text_to_scalar(label_type, value):
         """
         Maps a text label in XML file to scalars
         :param label_type: The label type
@@ -240,7 +245,8 @@ class JAAD(object):
 
         return map_dic[label_type][value]
 
-    def _map_scalar_to_text(self, label_type, value):
+    @staticmethod
+    def _map_scalar_to_text(label_type, value):
         """
         Maps a scalar value to a text label
         :param label_type: The label type
@@ -578,7 +584,8 @@ class JAAD(object):
         print("Number of people bounding boxes: %d" % people_box_count)
         print("Total number of pedestrian bounding boxes: %d" % (ped_box_beh_count + ped_box_count))
 
-    def balance_samples_count(self, seq_data, label_type, random_seed=42):
+    @staticmethod
+    def balance_samples_count(seq_data, label_type, random_seed=42):
         """
         Balances the number of positive and negative samples by randomly sampling
         from the more represented samples. Only works for binary classes.
@@ -833,7 +840,8 @@ class JAAD(object):
         elif method == 'ssd':
             return self._generate_csv_data_ssd(image_set, file_path, ped_samples)
 
-    def _get_data_frcnn(self, ped_samples):
+    @staticmethod
+    def _get_data_frcnn(ped_samples):
         """
         Data generation for Faster-rcnn algorithm
         :param ped_samples: Dictionary of all samples
@@ -862,7 +870,8 @@ class JAAD(object):
             all_data.append(all_imgs[key])
         return all_data, classes_count, class_mapping
 
-    def _generate_csv_data_retinanet(self, image_set, file_path, ped_samples):
+    @staticmethod
+    def _generate_csv_data_retinanet(image_set, file_path, ped_samples):
         """
         Data generation for Retinanet algorithm
         :param image_set: Data split
@@ -885,7 +894,8 @@ class JAAD(object):
                 f.write('%s,0\n' % (class_name))
         return data_save_path, map_path
 
-    def _generate_csv_data_yolo3(self, image_set, file_path, ped_samples):
+    @staticmethod
+    def _generate_csv_data_yolo3(image_set, file_path, ped_samples):
         """
         Data generation for YOLO3 algorithm
         :param image_set: Data split
@@ -910,7 +920,8 @@ class JAAD(object):
             f.write('%s,0\n' % (class_name))
         return data_save_path, map_path
 
-    def _generate_csv_data_ssd(self, image_set, file_path, ped_samples):
+    @staticmethod
+    def _generate_csv_data_ssd(image_set, file_path, ped_samples):
         """
         Data generation for SSD algorithm
         :param image_set: Data split
@@ -951,7 +962,8 @@ class JAAD(object):
 
         return video_ids, _pids
 
-    def _height_check(self, height_rng, frame_ids, boxes, images, occlusion):
+    @staticmethod
+    def _height_check(height_rng, frame_ids, boxes, images, occlusion):
         """
         Checks whether the bounding boxes are within a given height limit. If not, it
         will adjust the length of data sequences accordingly
@@ -972,7 +984,8 @@ class JAAD(object):
                 occ.append(occlusion[i])
         return imgs, box, frames, occ
 
-    def _get_center(self, box):
+    @staticmethod
+    def _get_center(box):
         """
         Calculates the center coordinate of a bounding box
         :param box: Bounding box coordinates
