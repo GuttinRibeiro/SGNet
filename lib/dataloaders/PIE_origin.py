@@ -75,13 +75,15 @@ class PIE(object):
             makedirs(cache_path)
         return cache_path
 
-    def _get_default_path(self):
+    @staticmethod
+    def _get_default_path():
         """
         Returns the default path where pie is expected to be installed.
         """
         return 'data/pie'
 
-    def _get_image_set_ids(self, image_set):
+    @staticmethod
+    def _get_image_set_ids(image_set):
         """
         Returns default image set ids
         :param image_set: Image set split
@@ -106,7 +108,8 @@ class PIE(object):
                     '{:05d}.png'.format(fid))
 
     # Visual helpers
-    def update_progress(self, progress):
+    @staticmethod
+    def update_progress(progress):
         """
         Creates a progress bar
         :param progress: The progress thus far
@@ -121,7 +124,8 @@ class PIE(object):
         sys.stdout.write(text)
         sys.stdout.flush()
 
-    def _print_dict(self, dic):
+    @staticmethod
+    def _print_dict(dic):
         """
         Prints a dictionary, one key-value pair per line
         :param dic: Dictionary
@@ -130,21 +134,24 @@ class PIE(object):
             print('%s: %s' % (str(k), str(v)))
 
     # Data processing helpers
-    def _get_width(self):
+    @staticmethod
+    def _get_width():
         """
         Returns image width
         :return: Image width
         """
         return 1920
 
-    def _get_height(self):
+    @staticmethod
+    def _get_height():
         """
         Returns image height
         :return: Image height
         """
         return 1080
 
-    def _get_dim(self):
+    @staticmethod
+    def _get_dim():
         """
         Returns the image dimensions
         :return: Image dimensions
@@ -262,7 +269,8 @@ class PIE(object):
                 print('\n')
 
     # Annotation processing helpers
-    def _map_text_to_scalar(self, label_type, value):
+    @staticmethod
+    def _map_text_to_scalar(label_type, value):
         """
         Maps a text label in XML file to scalars
         :param label_type: The label type
@@ -291,7 +299,8 @@ class PIE(object):
 
         return map_dic[label_type][value]
 
-    def _map_scalar_to_text(self, label_type, value):
+    @staticmethod
+    def _map_scalar_to_text(label_type, value):
         """
         Maps a scalar value to a text label
         :param label_type: The label type
@@ -645,7 +654,8 @@ class PIE(object):
               '\n '.join('{}: {}'.format(tag, cnt) for tag, cnt in sorted(traffic_box_count.items())),
               '\n total: ', sum(traffic_box_count.values()))
 
-    def balance_samples_count(self, seq_data, label_type, random_seed=42):
+    @staticmethod
+    def balance_samples_count(seq_data, label_type, random_seed=42):
         """
         Balances the number of positive and negative samples by randomly sampling
         from the more represented samples. Only works for binary classes.
@@ -843,7 +853,8 @@ class PIE(object):
 
         return set_ids, _pids
 
-    def _squarify(self, bbox, ratio, img_width):
+    @staticmethod
+    def _squarify(bbox, ratio, img_width):
         """
         Changes the ratio of bounding boxes to a fixed ratio
         :param bbox: Bounding box
@@ -868,7 +879,8 @@ class PIE(object):
             bbox[2] = img_width
         return bbox
 
-    def _height_check(self, height_rng, frame_ids, boxes, images, occlusion):
+    @staticmethod
+    def _height_check(height_rng, frame_ids, boxes, images, occlusion):
         """
         Checks whether the bounding boxes are within a given height limit. If not, it
         will adjust the length of bounding boxes in data sequences accordingly
@@ -889,7 +901,8 @@ class PIE(object):
                 occ.append(occlusion[i])
         return imgs, box, frames, occ
 
-    def _get_center(self, box):
+    @staticmethod
+    def _get_center(box):
         """
         Calculates the center coordinate of a bounding box
         :param box: Bounding box coordinates
@@ -1062,7 +1075,8 @@ class PIE(object):
                 'traffic_class_seq': traffic_class_seq,
                 'traffic_obj_id_seq': traffic_obj_id_seq}
 
-    def _get_traffic_participants(self, pid, frame_ids, traffic_annots, obj_type=''):
+    @staticmethod
+    def _get_traffic_participants(pid, frame_ids, traffic_annots, obj_type=''):
         '''
         NOTE: find and match all traffic participants for a pedestrian
         '''
