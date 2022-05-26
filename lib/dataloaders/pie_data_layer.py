@@ -128,7 +128,8 @@ class PIEDataLayer(data.Dataset):
             all_bboxes[i] = bbox
         return all_bboxes
 
-    def get_data_helper(self, data, data_type):
+    @staticmethod
+    def get_data_helper(data, data_type):
         """
         A helper function for data generation that combines different data types into a single representation
         :param data: A dictionary of different data types
@@ -208,8 +209,8 @@ class PIEDataLayer(data.Dataset):
         
         return ret
 
-    def get_path(self,
-                 file_name='',
+    @staticmethod
+    def get_path(file_name='',
                  save_folder='models',
                  dataset='pie',
                  model_type='trajectory',
@@ -227,7 +228,8 @@ class PIEDataLayer(data.Dataset):
             os.makedirs(save_path)
         return os.path.join(save_path, file_name), save_path
 
-    def get_target(self, session, start, end, observe_length, predict_length):
+    @staticmethod
+    def get_target(session, start, end, observe_length, predict_length):
         '''
         Given the input session and the start and end time of the input clip, find the target
         TARGET FOR PREDICTION IS THE CHANGES IN THE FUTURE!!

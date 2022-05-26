@@ -139,7 +139,8 @@ class ETHUCYDataLayer(data.Dataset):
         ret['timestep'] = timestep
         return ret
 
-    def get_target(self, session, start, end, observe_length, predict_length):
+    @staticmethod
+    def get_target(session, start, end, observe_length, predict_length):
         '''
         Prepare the target for loss
 
