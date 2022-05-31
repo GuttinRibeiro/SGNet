@@ -24,5 +24,7 @@ def parse_sgnet_args():
     parser.add_argument('--LATENT_DIM', default=32, type=int)
     parser.add_argument('--pred_dim', default=4, type=int)
     parser.add_argument('--input_dim', default=4, type=int)
-
+    parser.add_argument('--display_images', default=False, type=bool)
+    parser.add_argument('--display_freq', default=30.0, type=float)
+    parser.add_argument('--disable_tensorboard', default=False, type=bool)
     return parser.parse_args()

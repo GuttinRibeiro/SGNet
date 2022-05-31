@@ -1,6 +1,5 @@
 import numpy as np
 import random
-import pickle as pkl
 import os
 import copy
 import torch
@@ -46,7 +45,6 @@ def cxcywh_to_x1y1x2y2(boxes):
     new_boxes[...,2] = boxes[...,0] + boxes[...,2]/2
     new_boxes[...,3] = boxes[...,1] + boxes[...,3]/2
     return new_boxes
-
 
 def bbox_normalize(bbox,W=1280,H=640):
     '''

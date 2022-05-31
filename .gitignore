@@ -8,10 +8,9 @@
 *.sh
 
 TODO.md
-
 data/*
 logs/*
-=======
+
 data/PIE
 data/JAAD
 data/HEVI_dataset

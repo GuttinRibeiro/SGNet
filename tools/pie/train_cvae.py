@@ -4,12 +4,16 @@ from datetime import datetime
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch import nn, optim
+import numpy as np
+import matplotlib.pyplot as plt
 
 import lib.utils as utl
 from configs.pie import parse_sgnet_args as parse_args
 from lib.models import build_model
 from lib.losses import rmse_loss
 from lib.utils.jaadpie_train_utils_cvae import train, val, test
+
+import numpy as np
 
 def main(args):
     this_dir = osp.dirname(__file__)
@@ -45,11 +49,15 @@ def main(args):
     print("Number of validation samples:", val_gen.__len__())
     print("Number of test samples:", test_gen.__len__())
 
-    print('Creating tensorboard writer...')
-    logdir = 'logs'
-    dt_string = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    writer = SummaryWriter(os.path.join(logdir, "{}, model: {}, seed: {}".format(dt_string, args.model, args.seed)))
-    print('Writer created!')
+    if args.disable_tensorboard == False:
+        print('Creating tensorboard writer...')
+        logdir = 'logs'
+        dt_string = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        writer = SummaryWriter(os.path.join(logdir, "{}, model: {}, seed: {}".format(dt_string, args.model, args.seed)))
+        print('Writer created!')
+    else:
+        writer = None
+        print('Tensorboard writer was not created.')
 
     # Register hyperparameters used in this execution
     hparam_dict = {'model': args.model,
@@ -71,20 +79,34 @@ def main(args):
     min_MSE_15 = float('inf')
     best_model_metric = None
     num_epochs = args.epochs+args.start_epoch
-    for epoch in range(args.start_epoch, num_epochs):
-        print("Number of training samples:", len(train_gen))
+    print("Number of training samples:", len(train_gen))
 
+    if args.display_images:
+        dummy_img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        axis_dict = {}
+        fig, axs = plt.subplots(2, 2, figsize=(10, 5))
+        axis_dict['00'] = axs[0, 0].imshow(dummy_img)
+        axis_dict['01'] = axs[0, 1].imshow(dummy_img)
+        axis_dict['10'] = axs[1, 0].imshow(dummy_img)
+        axis_dict['11'] = axs[1, 1].imshow(dummy_img)
+        axis_dict['axs'] = axs
+        axis_dict['delay'] = 1/args.display_freq
+        axis_dict['fig'] = fig
+    else:
+        axis_dict=None
+
+    for epoch in range(args.start_epoch, num_epochs):
         # train
-        train_goal_loss, train_cvae_loss, train_KLD_loss = train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, writer=writer)
+        train_goal_loss, train_cvae_loss, train_KLD_loss = train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, writer=writer, axis_dict=axis_dict)
         print('Train Epoch: {} \t Goal loss: {:.4f}\t CVAE loss: {:.4f}\t KLD loss: {:.4f}'.format(
                 epoch, train_goal_loss, train_cvae_loss, train_KLD_loss))
 
         # val
-        val_loss, MSE_15, MSE_05, MSE_10, FMSE, FIOU, CMSE, CFMSE = val(model, val_gen, criterion, device, epoch, num_epochs, return_metrics=True, writer=writer)
+        val_loss, MSE_15, MSE_05, MSE_10, FMSE, FIOU, CMSE, CFMSE = val(model, val_gen, criterion, device, epoch, num_epochs, return_metrics=True, writer=writer, axis_dict=axis_dict)
         lr_scheduler.step(val_loss)
 
         # test
-        test_loss, t_MSE_15, t_MSE_05, t_MSE_10, t_FMSE, t_FIOU, t_CMSE, t_CFMSE = test(model, test_gen, criterion, device, epoch, num_epochs, writer=writer)
+        test_loss, t_MSE_15, t_MSE_05, t_MSE_10, t_FMSE, t_FIOU, t_CMSE, t_CFMSE = test(model, test_gen, criterion, device, epoch, num_epochs, writer=writer, axis_dict=axis_dict)
         print("Test Loss: {:.4f}".format(test_loss))
         print("MSE_05: %4f;  MSE_10: %4f;  MSE_15: %4f; FMSE: %4f;\n FIOU: %4f; CMSE: %4f; CFMSE: %4f\n" % (t_MSE_05, t_MSE_10, t_MSE_15, t_FMSE, t_FIOU, t_CMSE, t_CFMSE))
 
@@ -120,6 +142,7 @@ def main(args):
                 'test/CFMSE': t_CFMSE,
             }
             writer.add_hparams(hparam_dict, metric_dict)  
+            # writer.add_hparams(hparam_dict, metric_dict, run_name='hparam', timed=False)  
             best_model_metric = os.path.join(save_dir, saved_model_metric_name)
 
 if __name__ == '__main__':

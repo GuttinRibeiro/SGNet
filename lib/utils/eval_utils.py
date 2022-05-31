@@ -1,8 +1,124 @@
-import os
-import json
+from matplotlib import axis
 import numpy as np
 from .data_utils import bbox_denormalize, cxcywh_to_x1y1x2y2
+import matplotlib.pyplot as plt
+import cv2
+import os
 # from nuscenes.prediction import convert_local_coords_to_global
+
+def reconstruct_multiple_trajectories(input_traj, target_traj, cvae_all_dec_traj):
+    K = cvae_all_dec_traj.shape[2]
+    tiled_target_traj = np.tile(target_traj[:, :, None, :], (1, 1, K, 1))
+    input_traj = np.tile(input_traj[:,-1,:][:,None, None,:], (1, 1, K, 1))
+    tiled_target_traj += input_traj
+    cvae_all_dec_traj += input_traj
+    
+    tiled_target_traj = bbox_denormalize(tiled_target_traj, W=1920, H=1080)
+    cvae_all_dec_traj = bbox_denormalize(cvae_all_dec_traj, W=1920, H=1080)
+
+    tiled_target_traj_xyxy = cxcywh_to_x1y1x2y2(tiled_target_traj)
+    cvae_all_dec_traj_xyxy = cxcywh_to_x1y1x2y2(cvae_all_dec_traj)
+
+    tiled_target_traj_xy = np.zeros((tiled_target_traj_xyxy.shape[0], tiled_target_traj_xyxy.shape[1], tiled_target_traj_xyxy.shape[2], 2))
+    tiled_target_traj_xy[:, :, :, 0] = (tiled_target_traj_xyxy[:, :, :, 0]+tiled_target_traj_xyxy[:, :, :, 2])/2.0
+    tiled_target_traj_xy[:, :, :, 1] = (tiled_target_traj_xyxy[:, :, :, 1]+tiled_target_traj_xyxy[:, :, :, 3])/2.0 
+
+    cvae_all_dec_traj_xy = np.zeros((cvae_all_dec_traj_xyxy.shape[0], cvae_all_dec_traj_xyxy.shape[1], cvae_all_dec_traj_xyxy.shape[2], 2))
+    cvae_all_dec_traj_xy[:, :, :, 0] = (cvae_all_dec_traj_xyxy[:, :, :, 0]+cvae_all_dec_traj_xyxy[:, :, :, 2])/2.0
+    cvae_all_dec_traj_xy[:, :, :, 1] = (cvae_all_dec_traj_xyxy[:, :, :, 1]+cvae_all_dec_traj_xyxy[:, :, :, 3])/2.0 
+    return tiled_target_traj_xy, cvae_all_dec_traj_xy
+
+def load_frame(filename):
+    filename_tokens = filename.split('/')
+    video_file = os.path.join(filename_tokens[0], filename_tokens[1], filename_tokens[3], filename_tokens[4]+'.mp4')
+
+    capture = cv2.VideoCapture(video_file)
+    if capture.isOpened() == False:
+            print("Error opening the video file: " + video_file)
+            return     
+
+    frame_id = int(filename_tokens[-1].split('.')[0])
+
+    capture.set(1, frame_id)
+    ret, frame = capture.read()
+    if ret == False:
+        print(f'Error loading frame {frame_id} of video {video_file}')
+        return
+
+    capture.release()
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+def get_best_pred(pred_trajs_xy, target_traj_xy):
+    rmse = np.sum((pred_trajs_xy-target_traj_xy)**2, axis=-1).mean(axis=0)
+    best = np.argmin(rmse)
+    return pred_trajs_xy[:, best, :]
+
+def show_images(data, cvae_all_dec_traj, axis_dict, writer=None, idx=None, token='foo'):
+    input_traj = data['input_x'].to('cpu').numpy()
+    target_traj = data['target_y'].to('cpu').numpy()
+    image_files = data['cur_image_file']
+
+    target_traj_xy, pred_trajs_xy = reconstruct_multiple_trajectories(input_traj, target_traj[:,-1,:,:], cvae_all_dec_traj[:,-1,:,:])
+    # (batch_size, preds, K, 2)
+
+    batch_size = input_traj.shape[0]
+    step = batch_size//4
+
+    img0 = load_frame(image_files[0])
+    axis_dict['00'].set_data(img0)
+    best_pred_0 = get_best_pred(pred_trajs_xy[0], target_traj_xy[0])
+    scat_gt_0 = axis_dict['axs'][0, 0].scatter(target_traj_xy[0, :, 0, 0], target_traj_xy[0, :, 0, 1], s=1, c='r', marker='o')
+    scat_pred_0 = axis_dict['axs'][0, 0].scatter(best_pred_0[:, 0], best_pred_0[:, 1], s=1, c='g', marker='+')
+
+    img1 = load_frame(image_files[step])
+    axis_dict['01'].set_data(img1)
+    best_pred_1 = get_best_pred(pred_trajs_xy[step], target_traj_xy[step])
+    scat_gt_1 = axis_dict['axs'][0, 1].scatter(target_traj_xy[step, :, 0, 0], target_traj_xy[step, :, 0, 1], s=1, c='r', marker='o')
+    scat_pred_1 = axis_dict['axs'][0, 1].scatter(best_pred_1[:, 0], best_pred_1[:, 1], s=1, c='g', marker='+')
+
+    img2 = load_frame(image_files[int(2*step)])
+    axis_dict['10'].set_data(img2)
+    best_pred_2 = get_best_pred(pred_trajs_xy[int(2*step)], target_traj_xy[int(2*step)])
+    scat_gt_2 = axis_dict['axs'][1, 0].scatter(target_traj_xy[int(2*step), :, 0, 0], target_traj_xy[int(2*step), :, 0, 1], s=1, c='r', marker='o')
+    scat_pred_2 = axis_dict['axs'][1, 0].scatter(best_pred_2[:, 0], best_pred_2[:, 1], s=1, c='g', marker='+')
+
+    img3 = load_frame(image_files[int(3*step)])
+    axis_dict['11'].set_data(img3)
+    best_pred_3 = get_best_pred(pred_trajs_xy[int(3*step)], target_traj_xy[int(3*step)])
+    scat_gt_3 = axis_dict['axs'][1, 1].scatter(target_traj_xy[int(3*step), :, 0, 0], target_traj_xy[int(3*step), :, 0, 1], s=1, c='r', marker='o')
+    scat_pred_3 = axis_dict['axs'][1, 1].scatter(best_pred_3[:, 0], best_pred_3[:, 1], s=1, c='g', marker='+')
+
+    if writer is not None:
+        fig, ax = plt.subplots(2, 2)
+        ax[0, 0].imshow(img0)
+        ax[0, 0].scatter(target_traj_xy[0, :, 0, 0], target_traj_xy[0, :, 0, 1], s=1, c='r', marker='o')
+        ax[0, 0].scatter(best_pred_0[:, 0], best_pred_0[:, 1], s=1, c='g', marker='+')
+
+        ax[0, 1].imshow(img1)
+        ax[0, 1].scatter(target_traj_xy[int(step), :, 0, 0], target_traj_xy[int(step), :, 0, 1], s=1, c='r', marker='o')
+        ax[0, 1].scatter(best_pred_1[:, 0], best_pred_1[:, 1], s=1, c='g', marker='+')
+
+        ax[1, 0].imshow(img2)
+        ax[1, 0].scatter(target_traj_xy[int(2*step), :, 0, 0], target_traj_xy[int(2*step), :, 0, 1], s=1, c='r', marker='o')
+        ax[1, 0].scatter(best_pred_2[:, 0], best_pred_2[:, 1], s=1, c='g', marker='+')
+
+        ax[1, 1].imshow(img3)
+        ax[1, 1].scatter(target_traj_xy[int(3*step), :, 0, 0], target_traj_xy[int(3*step), :, 0, 1], s=1, c='r', marker='o')
+        ax[1, 1].scatter(best_pred_3[:, 0], best_pred_3[:, 1], s=1, c='g', marker='+')
+        writer.add_figure(token, fig, global_step=idx)
+
+    plt.draw()
+    plt.pause(axis_dict['delay'])
+    scat_gt_0.remove()
+    scat_pred_0.remove()
+    scat_gt_1.remove()
+    scat_pred_1.remove()
+    scat_gt_2.remove()
+    scat_pred_2.remove()
+    scat_gt_3.remove()
+    scat_pred_3.remove()
+    return
+
 def compute_IOU(bbox_true, bbox_pred, format='xywh'):
     '''
     compute IOU
@@ -71,14 +187,7 @@ def eval_jaad_pie(input_traj_np, target_traj_np, all_dec_traj_np):
         FIOU += np.mean(tmp_FIOU)
     return MSE_15, MSE_05, MSE_10, FMSE, CMSE, CFMSE, FIOU
 
-
 def eval_jaad_pie_cvae(input_traj, target_traj, cvae_all_dec_traj):
-    MSE_15=0
-    MSE_05=0
-    MSE_10=0
-    FMSE=0
-    CMSE=0
-    CFMSE=0
     FIOU=0
     K = cvae_all_dec_traj.shape[2]
     tiled_target_traj = np.tile(target_traj[:, :, None, :], (1, 1, K, 1))
@@ -154,7 +263,6 @@ def eval_ethucy(input_traj_np, target_traj_np, all_dec_traj_np):
         FDE_08 += np.mean(np.sqrt(np.sum((target_traj[-1,7,:] - all_dec_traj[-1,7,:]) ** 2, axis=-1)))
         FDE_12 += np.mean(np.sqrt(np.sum((target_traj[-1,-1,:] - all_dec_traj[-1,-1,:]) ** 2, axis=-1)))
     return ADE_08, FDE_08, ADE_12, FDE_12
-
 
 def eval_ethucy_cvae(input_traj, target_traj, cvae_all_traj):
     result = {'ADE_08':0, 'ADE_12':0, 'FDE_08':0, 'FDE_12':0}

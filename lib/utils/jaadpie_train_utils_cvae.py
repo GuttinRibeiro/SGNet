@@ -1,19 +1,12 @@
-import sys
-import os
-import os.path as osp
-import numpy as np
-import time
-import random
 from tqdm import tqdm
 import torch
-from torch import nn, optim
-from torch.nn import functional as F
-from torch.utils import data
+from torch import nn
 
-from lib.utils.eval_utils import eval_jaad_pie_cvae
+
+from lib.utils.eval_utils import eval_jaad_pie_cvae, show_images
 from lib.losses import cvae_multi
 
-def train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, writer=None):
+def train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, writer=None, axis_dict=None):
     # pid = os.getpid()
     # prev_mem = 0
     model.train() # Sets the module in training mode.
@@ -51,12 +44,16 @@ def train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, wri
             # loader.set_postfix(mem=add_mem)
             # print("added mem: {} M".format(add_mem))
             loader.set_postfix(loss=train_loss.item())
+            global_step = epoch*len(train_gen)+i
             if writer is not None:
-                global_step = epoch*len(train_gen)+i
                 writer.add_scalar('train/loss/goal_loss', goal_loss.item(), global_step)
                 writer.add_scalar('train/loss/cvae_loss', cvae_loss.item(), global_step)
                 writer.add_scalar('train/loss/kld_loss', KLD_loss.mean().item(), global_step)
                 writer.add_scalar('train/loss/total_loss', train_loss.item(), global_step)
+
+            cvae_dec_traj = cvae_dec_traj.detach().to('cpu').numpy()
+            if axis_dict is not None:
+                show_images(data, cvae_dec_traj, axis_dict, writer=writer, idx=global_step, token='/train/Image')
 
     total_goal_loss /= len(train_gen.dataset)
     total_cvae_loss/=len(train_gen.dataset)
@@ -64,7 +61,7 @@ def train(model, train_gen, criterion, optimizer, device, epoch, num_epochs, wri
     
     return total_goal_loss, total_cvae_loss, total_KLD_loss
 
-def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, return_metrics=False):
+def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, return_metrics=False, axis_dict=None):
     total_goal_loss = 0
     total_cvae_loss = 0
     total_KLD_loss = 0
@@ -80,16 +77,15 @@ def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, retur
     loader.set_description("Epoch {}/{}".format(epoch, num_epochs))
     with torch.set_grad_enabled(False):
         for batch_idx, data in enumerate(loader):
+            global_step = epoch*len(val_gen)+batch_idx
             batch_size = data['input_x'].shape[0]
             input_traj = data['input_x'].to(device)
             target_traj = data['target_y'].to(device)
 
             all_goal_traj, cvae_dec_traj, KLD_loss, _ = model(inputs=input_traj, map_mask=None, targets=None,training=False)
+
             cvae_loss = cvae_multi(cvae_dec_traj,target_traj)
-            
-
             goal_loss = criterion(all_goal_traj, target_traj)
-
 
             total_goal_loss += goal_loss.item()* batch_size
             total_cvae_loss += cvae_loss.item()* batch_size
@@ -98,7 +94,11 @@ def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, retur
             input_traj_np = input_traj.to('cpu').numpy()
             target_traj_np = target_traj.to('cpu').numpy()
             cvae_dec_traj = cvae_dec_traj.to('cpu').numpy()
+
+            if axis_dict is not None:
+                show_images(data, cvae_dec_traj, axis_dict, writer=writer, idx=global_step, token='/val/Image')
             batch_MSE_15, batch_MSE_05, batch_MSE_10, batch_FMSE, batch_CMSE, batch_CFMSE, batch_FIOU = eval_jaad_pie_cvae(input_traj_np, target_traj_np[:,-1,:,:], cvae_dec_traj[:,-1,:,:,:])
+            
             MSE_15 += batch_MSE_15
             MSE_05 += batch_MSE_05
             MSE_10 += batch_MSE_10
@@ -111,7 +111,6 @@ def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, retur
             loader.set_postfix(loss=val_loss)
 
             if writer is not None:
-                global_step = epoch*len(val_gen)+batch_idx
                 writer.add_scalar('val/loss/goal_loss', goal_loss.item(), global_step)
                 writer.add_scalar('val/loss/cvae_loss', cvae_loss.item(), global_step)
                 writer.add_scalar('val/loss/kld_loss', KLD_loss.mean().item(), global_step)
@@ -138,7 +137,8 @@ def val(model, val_gen, criterion, device, epoch, num_epochs, writer=None, retur
         return val_loss, MSE_15, MSE_05, MSE_10, FMSE, FIOU, CMSE, CFMSE
     return val_loss
 
-def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None):
+
+def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None, axis_dict=None):
     total_goal_loss = 0
     total_cvae_loss = 0
     total_KLD_loss = 0
@@ -154,6 +154,7 @@ def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None):
     loader.set_description("Epoch {}/{}".format(epoch, num_epochs))
     with torch.set_grad_enabled(False):
         for batch_idx, data in enumerate(loader):
+            global_step = epoch*len(test_gen)+batch_idx
             batch_size = data['input_x'].shape[0]
             input_traj = data['input_x'].to(device)
             target_traj = data['target_y'].to(device)
@@ -172,6 +173,9 @@ def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None):
             input_traj_np = input_traj.to('cpu').numpy()
             target_traj_np = target_traj.to('cpu').numpy()
             cvae_dec_traj = cvae_dec_traj.to('cpu').numpy()
+
+            if axis_dict is not None:
+                show_images(data, cvae_dec_traj, axis_dict, writer=writer, idx=global_step, token='/test/Image')
             batch_MSE_15, batch_MSE_05, batch_MSE_10, batch_FMSE, batch_CMSE, batch_CFMSE, batch_FIOU = eval_jaad_pie_cvae(input_traj_np, target_traj_np[:,-1,:,:], cvae_dec_traj[:,-1,:,:,:])
             MSE_15 += batch_MSE_15
             MSE_05 += batch_MSE_05
@@ -183,7 +187,6 @@ def test(model, test_gen, criterion, device, epoch, num_epochs, writer=None):
 
             loader.set_postfix(cmse=batch_CMSE)
             if writer is not None:
-                global_step = epoch*len(test_gen)+batch_idx
                 writer.add_scalar('test/loss/goal_loss', goal_loss.item(), global_step)
                 writer.add_scalar('test/loss/cvae_loss', cvae_loss.item(), global_step)
                 writer.add_scalar('test/loss/kld_loss', KLD_loss.mean().item(), global_step)

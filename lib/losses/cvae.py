@@ -34,8 +34,4 @@ def cvae_multi(pred_traj, target, first_history_index = 0):
             loss_traj = traj_rmse[range(len(best_idx)), best_idx].mean()
             total_loss.append(loss_traj)
 
-        # original_loss = sum(total_loss)/len(total_loss)
-        # print(my_loss, original_loss)
-        
         return sum(total_loss)/len(total_loss)
-        # return my_loss
