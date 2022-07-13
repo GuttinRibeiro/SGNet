@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .feature_extractor import build_feature_extractor
 from .bitrap_np import BiTraPNP
+from .fds import FDS
 import torch.nn.functional as F
 
 class SGNet_CVAE(nn.Module):
@@ -17,13 +18,22 @@ class SGNet_CVAE(nn.Module):
         self.pred_dim = args.pred_dim
         self.K = args.K
         self.map = False
+        if args.fds:
+            self.fds = True
+            self.start_smooth = args.start_smooth
+            self.FDS = FDS(feature_dim=self.hidden_size, bucket_num=args.bucket_num, bucket_start=args.bucket_start,
+                           start_update=args.start_update, start_smooth=args.start_smooth, kernel=args.fds_kernel,
+                           ks=args.fds_ks, sigma=args.fds_sigma, momentum=args.fds_mmt)
+        else:
+            self.fds = False
+
         if self.dataset in ['JAAD','PIE']:
             # the predict shift is in pixel
             self.pred_dim = 4
             self.regressor = nn.Sequential(nn.Linear(self.hidden_size, 
                                                      self.pred_dim),
                                                      nn.Tanh())
-            self.flow_enc_cell = nn.GRUCell(self.hidden_size*2, self.hidden_size)
+            # self.flow_enc_cell = nn.GRUCell(self.hidden_size*2, self.hidden_size)
         elif self.dataset in ['ETH', 'HOTEL','UNIV','ZARA1', 'ZARA2']:
             self.pred_dim = 2
             # the predict shift is in meter
@@ -90,12 +100,14 @@ class SGNet_CVAE(nn.Module):
         goal_for_enc  = torch.bmm(enc_attn, goal_for_enc).squeeze(1)
         return goal_for_dec, goal_for_enc, goal_traj
 
-    def cvae_decoder(self, dec_hidden, goal_for_dec):
+    def cvae_decoder(self, dec_hidden, goal_for_dec, raw_targets=None, epoch=None):
         batch_size = dec_hidden.size(0)
        
         K = dec_hidden.shape[1]
         dec_hidden = dec_hidden.view(-1, dec_hidden.shape[-1])
+
         dec_traj = dec_hidden.new_zeros(batch_size, self.dec_steps, K, self.pred_dim)
+        dec_hidden_ret = torch.zeros((self.dec_steps, dec_hidden.shape[0], dec_hidden.shape[1]))
         for dec_step in range(self.dec_steps):
             # incremental goal for each time step
             goal_dec_input = dec_hidden.new_zeros(batch_size, self.dec_steps, self.hidden_size//4)
@@ -108,13 +120,24 @@ class SGNet_CVAE(nn.Module):
             dec_dec_input = self.dec_hidden_to_input(dec_hidden)
             dec_input = self.dec_drop(torch.cat((goal_dec_input,dec_dec_input),dim = -1))
             dec_hidden = self.dec_cell(dec_input, dec_hidden)
+
+            # FDS
+            if self.training and self.fds:
+                if epoch >= self.start_smooth:
+                    dec_hidden = self.FDS.smooth(dec_hidden, raw_targets, epoch)
+                    dec_hidden_ret[dec_step, :, :] = dec_hidden
+        
             # regress dec traj for loss
             batch_traj = self.regressor(dec_hidden)
             batch_traj = batch_traj.view(-1, K, batch_traj.shape[-1])
             dec_traj[:,dec_step,:,:] = batch_traj
+        
+        if self.training and self.fds:
+            return dec_traj, dec_hidden_ret
+
         return dec_traj
 
-    def encoder(self, raw_inputs, raw_targets, traj_input, flow_input=None, start_index = 0):
+    def encoder(self, raw_inputs, raw_targets, traj_input, flow_input=None, start_index=0, epoch=None):
         # initial output tensor
         all_goal_traj = traj_input.new_zeros(traj_input.size(0), self.enc_steps, self.dec_steps, self.pred_dim)
         all_cvae_dec_traj = traj_input.new_zeros(traj_input.size(0), self.enc_steps, self.dec_steps, self.K, self.pred_dim)
@@ -124,6 +147,7 @@ class SGNet_CVAE(nn.Module):
         traj_enc_hidden = traj_input.new_zeros((traj_input.size(0), self.hidden_size))
         total_probabilities = traj_input.new_zeros((traj_input.size(0), self.enc_steps, self.K))
         total_KLD = 0
+        dec_hidden_steps = torch.zeros((self.enc_steps,  self.dec_steps, traj_input.size(0)*self.K, self.hidden_size))
         for enc_step in range(start_index, self.enc_steps):
             traj_enc_hidden = self.traj_enc_cell(self.enc_drop(torch.cat((traj_input[:,enc_step,:], goal_for_enc), 1)), traj_enc_hidden)
             enc_hidden = traj_enc_hidden
@@ -141,16 +165,28 @@ class SGNet_CVAE(nn.Module):
             if self.map:
                 map_input = flow_input
                 cvae_dec_hidden = (cvae_dec_hidden + map_input.unsqueeze(1))/2
-            all_cvae_dec_traj[:,enc_step,:,:,:] = self.cvae_decoder(cvae_dec_hidden, goal_for_dec)
+
+            # FDS
+            if self.training and self.fds:
+                all_cvae_dec_traj[:,enc_step,:,:,:], dec_hidden_steps[enc_step, :, :, :] = self.cvae_decoder(cvae_dec_hidden, goal_for_dec, raw_targets=raw_targets[:,enc_step,:,:], epoch=epoch)
+            else:
+                all_cvae_dec_traj[:,enc_step,:,:,:] = self.cvae_decoder(cvae_dec_hidden, goal_for_dec)
+    
+        if self.training and self.fds:
+            return all_goal_traj, all_cvae_dec_traj, total_KLD, total_probabilities, dec_hidden_steps
+
         return all_goal_traj, all_cvae_dec_traj, total_KLD, total_probabilities
             
-    def forward(self, inputs, map_mask=None, targets = None, start_index = 0, training=True):
+    def forward(self, inputs, map_mask=None, targets = None, start_index = 0, training=True, epoch=None):
         self.training = training
         if torch.is_tensor(start_index):
             start_index = start_index[0].item()
         if self.dataset in ['JAAD','PIE']:
             traj_input = self.feature_extractor(inputs)
-            all_goal_traj, all_cvae_dec_traj, KLD, total_probabilities = self.encoder(inputs, targets, traj_input)
+            if self.fds:
+                all_goal_traj, all_cvae_dec_traj, KLD, total_probabilities, dec_hidden_ret = self.encoder(inputs, targets, traj_input, epoch=epoch)
+                return all_goal_traj, all_cvae_dec_traj, KLD, total_probabilities, dec_hidden_ret
+            
             return all_goal_traj, all_cvae_dec_traj, KLD, total_probabilities
         elif self.dataset in ['ETH', 'HOTEL','UNIV','ZARA1', 'ZARA2']:
             traj_input_temp = self.feature_extractor(inputs[:,start_index:,:])

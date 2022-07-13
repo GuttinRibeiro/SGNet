@@ -10,6 +10,11 @@
 TODO.md
 data/*
 logs/*
+logs*
+statistics/*
+statistics*/
+results*/
+.idea/
 
 data/PIE
 data/JAAD

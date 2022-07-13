@@ -11,7 +11,7 @@ def reconstruct_multiple_trajectories(input_traj, target_traj, cvae_all_dec_traj
     tiled_target_traj = np.tile(target_traj[:, :, None, :], (1, 1, K, 1))
     input_traj = np.tile(input_traj[:,-1,:][:,None, None,:], (1, 1, K, 1))
     tiled_target_traj += input_traj
-    cvae_all_dec_traj += input_traj
+    cvae_all_dec_traj = cvae_all_dec_traj + input_traj
     
     tiled_target_traj = bbox_denormalize(tiled_target_traj, W=1920, H=1080)
     cvae_all_dec_traj = bbox_denormalize(cvae_all_dec_traj, W=1920, H=1080)
@@ -51,7 +51,7 @@ def load_frame(filename):
 def get_best_pred(pred_trajs_xy, target_traj_xy):
     rmse = np.sum((pred_trajs_xy-target_traj_xy)**2, axis=-1).mean(axis=0)
     best = np.argmin(rmse)
-    return pred_trajs_xy[:, best, :]
+    return pred_trajs_xy[:, best, :], best
 
 def show_images(data, cvae_all_dec_traj, axis_dict, writer=None, idx=None, token='foo'):
     input_traj = data['input_x'].to('cpu').numpy()
@@ -66,44 +66,44 @@ def show_images(data, cvae_all_dec_traj, axis_dict, writer=None, idx=None, token
 
     img0 = load_frame(image_files[0])
     axis_dict['00'].set_data(img0)
-    best_pred_0 = get_best_pred(pred_trajs_xy[0], target_traj_xy[0])
-    scat_gt_0 = axis_dict['axs'][0, 0].scatter(target_traj_xy[0, :, 0, 0], target_traj_xy[0, :, 0, 1], s=1, c='r', marker='o')
+    best_pred_0, _ = get_best_pred(pred_trajs_xy[0], target_traj_xy[0])
+    scat_gt_0 = axis_dict['axs'][0, 0].scatter(target_traj_xy[0, :, -1, 0], target_traj_xy[0, :, -1, 1], s=1, c='r', marker='o')
     scat_pred_0 = axis_dict['axs'][0, 0].scatter(best_pred_0[:, 0], best_pred_0[:, 1], s=1, c='g', marker='+')
 
     img1 = load_frame(image_files[step])
     axis_dict['01'].set_data(img1)
-    best_pred_1 = get_best_pred(pred_trajs_xy[step], target_traj_xy[step])
-    scat_gt_1 = axis_dict['axs'][0, 1].scatter(target_traj_xy[step, :, 0, 0], target_traj_xy[step, :, 0, 1], s=1, c='r', marker='o')
+    best_pred_1, _ = get_best_pred(pred_trajs_xy[step], target_traj_xy[step])
+    scat_gt_1 = axis_dict['axs'][0, 1].scatter(target_traj_xy[step, :, -1, 0], target_traj_xy[step, :, -1, 1], s=1, c='r', marker='o')
     scat_pred_1 = axis_dict['axs'][0, 1].scatter(best_pred_1[:, 0], best_pred_1[:, 1], s=1, c='g', marker='+')
 
     img2 = load_frame(image_files[int(2*step)])
     axis_dict['10'].set_data(img2)
-    best_pred_2 = get_best_pred(pred_trajs_xy[int(2*step)], target_traj_xy[int(2*step)])
-    scat_gt_2 = axis_dict['axs'][1, 0].scatter(target_traj_xy[int(2*step), :, 0, 0], target_traj_xy[int(2*step), :, 0, 1], s=1, c='r', marker='o')
+    best_pred_2, _ = get_best_pred(pred_trajs_xy[int(2*step)], target_traj_xy[int(2*step)])
+    scat_gt_2 = axis_dict['axs'][1, 0].scatter(target_traj_xy[int(2*step), :, -1, 0], target_traj_xy[int(2*step), :, -1, 1], s=1, c='r', marker='o')
     scat_pred_2 = axis_dict['axs'][1, 0].scatter(best_pred_2[:, 0], best_pred_2[:, 1], s=1, c='g', marker='+')
 
     img3 = load_frame(image_files[int(3*step)])
     axis_dict['11'].set_data(img3)
-    best_pred_3 = get_best_pred(pred_trajs_xy[int(3*step)], target_traj_xy[int(3*step)])
-    scat_gt_3 = axis_dict['axs'][1, 1].scatter(target_traj_xy[int(3*step), :, 0, 0], target_traj_xy[int(3*step), :, 0, 1], s=1, c='r', marker='o')
+    best_pred_3, _ = get_best_pred(pred_trajs_xy[int(3*step)], target_traj_xy[int(3*step)])
+    scat_gt_3 = axis_dict['axs'][1, 1].scatter(target_traj_xy[int(3*step), :, -1, 0], target_traj_xy[int(3*step), :, -1, 1], s=1, c='r', marker='o')
     scat_pred_3 = axis_dict['axs'][1, 1].scatter(best_pred_3[:, 0], best_pred_3[:, 1], s=1, c='g', marker='+')
 
     if writer is not None:
         fig, ax = plt.subplots(2, 2)
         ax[0, 0].imshow(img0)
-        ax[0, 0].scatter(target_traj_xy[0, :, 0, 0], target_traj_xy[0, :, 0, 1], s=1, c='r', marker='o')
+        ax[0, 0].scatter(target_traj_xy[0, :, -1, 0], target_traj_xy[0, :, -1, 1], s=1, c='r', marker='o')
         ax[0, 0].scatter(best_pred_0[:, 0], best_pred_0[:, 1], s=1, c='g', marker='+')
 
         ax[0, 1].imshow(img1)
-        ax[0, 1].scatter(target_traj_xy[int(step), :, 0, 0], target_traj_xy[int(step), :, 0, 1], s=1, c='r', marker='o')
+        ax[0, 1].scatter(target_traj_xy[int(step), :, -1, 0], target_traj_xy[int(step), :, -1, 1], s=1, c='r', marker='o')
         ax[0, 1].scatter(best_pred_1[:, 0], best_pred_1[:, 1], s=1, c='g', marker='+')
 
         ax[1, 0].imshow(img2)
-        ax[1, 0].scatter(target_traj_xy[int(2*step), :, 0, 0], target_traj_xy[int(2*step), :, 0, 1], s=1, c='r', marker='o')
+        ax[1, 0].scatter(target_traj_xy[int(2*step), :, -1, 0], target_traj_xy[int(2*step), :, -1, 1], s=1, c='r', marker='o')
         ax[1, 0].scatter(best_pred_2[:, 0], best_pred_2[:, 1], s=1, c='g', marker='+')
 
         ax[1, 1].imshow(img3)
-        ax[1, 1].scatter(target_traj_xy[int(3*step), :, 0, 0], target_traj_xy[int(3*step), :, 0, 1], s=1, c='r', marker='o')
+        ax[1, 1].scatter(target_traj_xy[int(3*step), :, -1, 0], target_traj_xy[int(3*step), :, -1, 1], s=1, c='r', marker='o')
         ax[1, 1].scatter(best_pred_3[:, 0], best_pred_3[:, 1], s=1, c='g', marker='+')
         writer.add_figure(token, fig, global_step=idx)
 
@@ -118,6 +118,33 @@ def show_images(data, cvae_all_dec_traj, axis_dict, writer=None, idx=None, token
     scat_gt_3.remove()
     scat_pred_3.remove()
     return
+
+def save_images(data, cvae_all_dec_traj, save_folder, multimodal=False):
+    input_traj = data['input_x'].to('cpu').numpy()
+    target_traj = data['target_y'].to('cpu').numpy()
+    image_files = data['cur_image_file']    
+
+    target_traj_xy, pred_trajs_xy = reconstruct_multiple_trajectories(input_traj, target_traj[:,-1,:,:], cvae_all_dec_traj[:,-1,:,:,:].copy())
+    batch_size = input_traj.shape[0]
+
+    color_list = ['#c0392b', '#e74c3c', '#9b59b6', '#5b2c6f', '#1a5276', '#3498db', '#1abc9c', '#16a085', '#27ae60', '#2ecc71', 
+                    '#f1c40f', '#f39c12', '#e67e22', '#d35400', '#fdfefe', '#bdc3c7', '#95a5a6', '#7f8c8d', '#34495e', '#17202a']
+    num_traj = target_traj_xy.shape[2]
+    for i in range(batch_size):
+        img = load_frame(image_files[i])
+        plt.imshow(img)
+        if multimodal:
+            for j in range(num_traj):
+                plt.scatter(pred_trajs_xy[i, :, j, 0], pred_trajs_xy[i, :, j, 1], s=1, c=color_list[j], marker='+')
+        else:
+            best_pred, _ = get_best_pred(pred_trajs_xy[i], target_traj_xy[i])
+            plt.scatter(best_pred[:, 0], best_pred[:, 1], s=1, c='g', marker='+')
+
+        plt.scatter(target_traj_xy[i, :, -1, 0], target_traj_xy[i, :, -1, 1], s=1, c='r', marker='o')
+        tokens = image_files[i].split('/')
+        filename = tokens[3]+'_'+tokens[4]+'_'+tokens[-1]
+        plt.savefig(os.path.join(save_folder, filename))
+        plt.close()
 
 def compute_IOU(bbox_true, bbox_pred, format='xywh'):
     '''
@@ -191,9 +218,7 @@ def eval_jaad_pie_cvae(input_traj, target_traj, cvae_all_dec_traj):
     FIOU=0
     K = cvae_all_dec_traj.shape[2]
     tiled_target_traj = np.tile(target_traj[:, :, None, :], (1, 1, K, 1))
-    #import pdb; pdb.set_trace()
     input_traj = np.tile(input_traj[:,-1,:][:,None, None,:], (1, 1, K, 1))
-    #import pdb; pdb.set_trace()
     tiled_target_traj += input_traj
     cvae_all_dec_traj += input_traj
     
@@ -203,8 +228,24 @@ def eval_jaad_pie_cvae(input_traj, target_traj, cvae_all_dec_traj):
     tiled_target_traj_xyxy = cxcywh_to_x1y1x2y2(tiled_target_traj)
     cvae_all_dec_traj_xyxy = cxcywh_to_x1y1x2y2(cvae_all_dec_traj)
 
+    tiled_target_traj_xy = np.zeros((tiled_target_traj_xyxy.shape[0], tiled_target_traj_xyxy.shape[1], tiled_target_traj_xyxy.shape[2], 2))
+    tiled_target_traj_xy[:, :, :, 0] = (tiled_target_traj_xyxy[:, :, :, 0]+tiled_target_traj_xyxy[:, :, :, 2])/2.0
+    tiled_target_traj_xy[:, :, :, 1] = (tiled_target_traj_xyxy[:, :, :, 1]+tiled_target_traj_xyxy[:, :, :, 3])/2.0 
+
+    cvae_all_dec_traj_xy = np.zeros((cvae_all_dec_traj_xyxy.shape[0], cvae_all_dec_traj_xyxy.shape[1], cvae_all_dec_traj_xyxy.shape[2], 2))
+    cvae_all_dec_traj_xy[:, :, :, 0] = (cvae_all_dec_traj_xyxy[:, :, :, 0]+cvae_all_dec_traj_xyxy[:, :, :, 2])/2.0
+    cvae_all_dec_traj_xy[:, :, :, 1] = (cvae_all_dec_traj_xyxy[:, :, :, 1]+cvae_all_dec_traj_xyxy[:, :, :, 3])/2.0 
+
+    best_preds = np.zeros((input_traj.shape[0], 4))
+    for i in range(input_traj.shape[0]):
+        _, best_idx = get_best_pred(cvae_all_dec_traj_xy[i], tiled_target_traj_xy[i])
+        best_preds[i, :] = cvae_all_dec_traj_xyxy[i, -1, best_idx, :]
+
+    tmp_FIOU = []
+    for i in range(input_traj.shape[0]):
+        tmp_FIOU.append(compute_IOU(best_preds[i, :], tiled_target_traj[i, -1, 0, :], format='x1y1x2y2'))
+    FIOU += np.mean(tmp_FIOU)
     MSE_05 = np.square(cvae_all_dec_traj_xyxy[:,:15,:,:] - tiled_target_traj_xyxy[:,:15,:,:]).mean(axis=(1, 3)).min(axis=-1).sum()
-    #import pdb; pdb.set_trace()
     MSE_10 = np.square(cvae_all_dec_traj_xyxy[:,:30,:,:] - tiled_target_traj_xyxy[:,:30,:,:]).mean(axis=(1, 3)).min(axis=-1).sum()
     MSE_15 = np.square(cvae_all_dec_traj_xyxy - tiled_target_traj_xyxy).mean(axis=(1, 3)).min(axis=-1).sum()
     FMSE = np.square(cvae_all_dec_traj_xyxy[:,-1,:,:] - tiled_target_traj_xyxy[:,-1,:,:]).mean(axis=-1).min(axis=-1).sum()

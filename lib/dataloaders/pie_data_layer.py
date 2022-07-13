@@ -1,10 +1,22 @@
 ## Code modified based on https://github.com/MoonBlvd/bidireaction-trajectory-prediction/blob/main/datasets/PIE.py
+## Modified by Augusto Ribeiro Castro on July 8th, 2022 (augusto.ribeiro.castro@usp.br)
 
 import os
 import numpy as np
 import torch
 from torch.utils import data
 from .PIE_origin import PIE
+from lib.utils import data_utils
+from scipy.ndimage import convolve1d
+
+# TODO: definir onde colocar essas constantes e qual o valor de cada uma delas
+# (índice a partir do qual aparece a primeira bin com contagem não nula)
+bucket_starts = {
+    'x': 1,
+    'y': 557,
+    'w': 551,
+    'h': 457,
+}
 
 class PIEDataLayer(data.Dataset):
     def __init__(self, args, split):
@@ -39,7 +51,70 @@ class PIEDataLayer(data.Dataset):
         traj_model_opts['prediction_type'].extend(['obd_speed', 'heading_angle'])
         beh_seq = imdb.generate_data_trajectory_sequence(self.split, **traj_data_opts)
         self.data = self.get_traj_data(beh_seq, **traj_model_opts)
-        
+        self.bucket_weights = self._get_bucket_weights()
+
+    def _get_bucket_weights(self):
+        assert self.args.reweight in {'none', 'inverse', 'sqrt_inv'}
+        assert self.args.reweight != 'none' if self.args.lds else True, "Set reweight to \'sqrt_inv\' or \'inverse\' (default) when using LDS"
+
+        if self.args.reweight == 'none':
+            return None       
+
+        print(f'Using re-weighting: [{self.args.reweight.upper()}]')
+
+        buckets_num = {}
+        for key in bucket_starts.keys():
+            buckets_num[key] = np.load(os.path.join(f'statistics/pie/n_{key}.npy'))
+
+        bucket_weights = {}
+        value_lst = {}
+        if self.args.lds:
+            for key in bucket_starts.keys():
+                value_lst[key] = buckets_num[key][bucket_starts[key]:]+1 # adding 1 to prevent nan when the bin is empty
+
+            lds_kernel_window = data_utils.get_lds_kernel_window(self.args.lds_kernel, self.args.lds_ks, self.args.lds_sigma)
+            print(f'Using LDS: [{self.args.lds_kernel.upper()}] ({self.args.lds_ks}/{self.args.lds_sigma})')
+            
+            if self.args.reweight == 'sqrt_inv':
+                for key in value_lst:
+                    value_lst[key] = np.sqrt(value_lst[key])
+
+            for key in value_lst.keys():
+                smoothed_value = convolve1d(np.asarray(value_lst[key]), weights=lds_kernel_window, mode='reflect')
+                smoothed_value = [smoothed_value[0]] * bucket_starts[key] + list(smoothed_value)
+                # clipped_smoothed_value = np.clip(smoothed_value, 1.0, float('inf'))
+                scaling = np.sum(buckets_num[key]) / np.sum(buckets_num[key] / smoothed_value)
+                bucket_weights[key] = [np.float32(scaling/smoothed_value[bucket]) for bucket in range(len(buckets_num[key]))]
+        else:
+            for key in bucket_starts.keys():
+                value_lst[key] = [buckets_num[key][bucket_starts[key]]] * bucket_starts[key] + buckets_num[key][bucket_starts[key]:]
+                if self.args.reweight == 'sqrt_inv':
+                    value_lst[key] = np.sqrt(value_lst[key])
+                scaling = np.sum(buckets_num[key]) / np.sum(buckets_num[key] / np.array(value_lst[key]))
+                bucket_weights[key] = [np.float32(scaling / value_lst[bucket]) for bucket in range(len(buckets_num[key]))]
+
+        return bucket_weights
+
+    def get_bin_idx(self, x):
+        ret = min(int((x+0.68)*1000.0), 1359)
+        return ret
+
+    def _get_weights(self, target):
+        t_shape = target.shape
+        weights = torch.ones(t_shape)
+        if self.bucket_weights is not None:
+            target_x = torch.flatten(target[:, :, 0])
+            target_y = torch.flatten(target[:, :, 1])
+            target_w = torch.flatten(target[:, :, 2])
+            target_h = torch.flatten(target[:, :, 3])
+
+            weights[:, :, 0] = torch.tensor(np.array(list(map(lambda v: self.bucket_weights['x'][self.get_bin_idx(v)], target_x))), dtype=torch.float32).view(*[t_shape[0], t_shape[1]])
+            weights[:, :, 1] = torch.tensor(np.array(list(map(lambda v: self.bucket_weights['y'][self.get_bin_idx(v)], target_y))), dtype=torch.float32).view(*[t_shape[0], t_shape[1]])
+            weights[:, :, 2] = torch.tensor(np.array(list(map(lambda v: self.bucket_weights['w'][self.get_bin_idx(v)], target_w))), dtype=torch.float32).view(*[t_shape[0], t_shape[1]])
+            weights[:, :, 3] = torch.tensor(np.array(list(map(lambda v: self.bucket_weights['h'][self.get_bin_idx(v)], target_h))), dtype=torch.float32).view(*[t_shape[0], t_shape[1]])
+
+        return weights
+
     def __getitem__(self, index):
         obs_bbox = torch.FloatTensor(self.data['obs_bbox'][index])
         pred_bbox = torch.FloatTensor(self.data['pred_bbox'][index])
@@ -50,6 +125,7 @@ class PIEDataLayer(data.Dataset):
                'target_y':pred_bbox, 'cur_image_file':cur_image_file}
         
         ret['timestep'] = int(cur_image_file.split('/')[-1].split('.')[0])
+        ret['weights'] = self._get_weights(ret['target_y'])
         
         return ret
 

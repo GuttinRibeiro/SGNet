@@ -12,9 +12,13 @@ class rmse_loss(nn.Module):
     '''
     def __init__(self):
         super(rmse_loss, self).__init__()
+        self.name = 'RMSE'
     
-    def forward(self, x_pred, x_true):
-        L2_diff = torch.sqrt(torch.sum((x_pred - x_true)**2, dim=3))
+    def forward(self, x_pred, x_true, weights=None):
+        if weights is None:
+            L2_diff = torch.sqrt(torch.sum((x_pred - x_true)**2, dim=3))
+        else:
+            L2_diff = torch.sqrt(torch.sum(((x_pred - x_true)**2)*weights, dim=3))
         # sum over prediction time steps
         L2_all_pred = torch.sum(L2_diff, dim=2)
         # mean of each frames predictions
